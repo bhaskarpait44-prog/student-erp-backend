@@ -8,6 +8,8 @@ const studentSchema = new mongoose.Schema(
 
     gender: { type: String, enum: ["Male", "Female", "Other"] },
 
+    className: { type: String, required: true },
+
     dob: { type: Date },
 
     bloodGroup: { type: String },

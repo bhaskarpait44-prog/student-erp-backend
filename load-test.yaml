@@ -1,0 +1,10 @@
+config:
+  target: "https://student-erp-backend-lgxs.onrender.com"
+  phases:
+    - duration: 60
+      arrivalRate: 20
+
+scenarios:
+  - flow:
+      - get:
+          url: "/api/students"

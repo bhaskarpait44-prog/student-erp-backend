@@ -14,3 +14,6 @@ npm-debug.log*
 
 # build
 dist
+
+.env.local
+.env.production

@@ -5,8 +5,12 @@ import {
   promoteStudents,
   getStudentsBySession
 } from "./studentSession.controller.js";
+import { verifyApiKey } from "../../middlewares/apiKey.middleware.js";
 
 const router = express.Router();
+
+// External API (for fetching students outside system)
+router.get("/external", verifyApiKey, getStudentsBySession);
 
 router.use(protect);
 

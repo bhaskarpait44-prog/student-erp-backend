@@ -22,6 +22,7 @@ export const getStudentsBySession = async (req, res) => {
         ...r.studentId.toObject(),
         className: r.className,
         section: r.section,
+        rollNo: r.rollNo, 
         promoted: r.promoted
       }));
 

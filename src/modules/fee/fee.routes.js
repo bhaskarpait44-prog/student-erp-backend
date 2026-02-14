@@ -1,24 +1,27 @@
 import express from "express";
-import * as feeController from "./fee.controller.js";
-
-
+import { protect } from "../../middlewares/auth.middleware.js";
+import {
+  getFeeByStudent,
+  addPayment,
+  deletePayment,
+  getFeeStatus,
+  getDefaulters,
+  getCollectionReport
+} from "./fee.controller.js";
 
 const router = express.Router();
 
-// 🔹 Set Fee Structure (Admin)
-router.post("/set", feeController.setFeeStructure);
+router.use(protect);
 
-// 🔹 Add Payment
-router.post("/pay", feeController.addPayment);
+/* 🔥 IMPORTANT: Specific routes FIRST */
+router.post("/payment", addPayment);
+router.delete("/payment", deletePayment);
+router.get("/status/all", getFeeStatus);
+router.get("/report/defaulters", getDefaulters); 
+router.get("/report/collection", getCollectionReport);
 
-// 🔹 Get Fee by Student ID
-router.get("/:studentId", feeController.getFeeByStudent);
 
-// 🔹 Get Fee by all Student
-router.get("/", feeController.getAllFees);
-
-router.get("/report/collection", feeController.getCollectionReport);
-router.get("/report/defaulters", feeController.getDefaulters);
-router.delete("/payment", feeController.deletePayment);
+/* 🔥 Dynamic route LAST */
+router.get("/:studentId", getFeeByStudent);
 
 export default router;

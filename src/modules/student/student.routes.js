@@ -1,7 +1,5 @@
 import express from "express";
 import { protect } from "../../middlewares/auth.middleware.js";
-
-
 import {
   createStudent,
   getStudents,
@@ -12,7 +10,6 @@ import {
 
 const router = express.Router();
 
-// 🔐 Protect all student routes
 router.use(protect);
 
 router.post("/", createStudent);

@@ -1,55 +1,106 @@
 import Fee from "./fee.model.js";
+import AcademicSession from "../session/session.model.js";
+import FeeStructure from "../feeStructure/feeStructure.model.js";
+import StudentSession from "../studentSession/studentSession.model.js";
 
-// 🔹 Admin sets yearly/monthly/admission fee
-export const setFeeStructure = async (req, res) => {
+
+/* ========================================
+   GET FEE BY STUDENT (AUTO CREATE)
+======================================== */
+export const getFeeByStudent = async (req, res) => {
   try {
-    const { studentId, admissionFee, yearlyFee, monthlyFee } = req.body;
+    const activeSession = await AcademicSession.findOne({ isActive: true });
 
-    let fee = await Fee.findOne({ studentId });
+    if (!activeSession)
+      return res.status(400).json({ message: "No active session found" });
+
+    const enrollment = await StudentSession.findOne({
+      studentId: req.params.studentId,
+      sessionId: activeSession._id,
+    }).populate("studentId");
+
+    if (!enrollment)
+      return res.status(404).json({
+        message: "Student not enrolled in active session",
+      });
+
+    let fee = await Fee.findOne({
+      studentId: req.params.studentId,
+      sessionId: activeSession._id,
+    });
 
     if (!fee) {
-      fee = await Fee.create({
-        studentId,
-        admissionFee,
-        yearlyFee,
-        monthlyFee,
+      const structure = await FeeStructure.findOne({
+        className: enrollment.className,
+        sessionId: activeSession._id,
       });
-    } else {
-      fee.admissionFee = admissionFee;
-      fee.yearlyFee = yearlyFee;
-      fee.monthlyFee = monthlyFee;
-      await fee.save();
+
+      if (!structure)
+        return res.status(404).json({
+          message: "Fee structure not set for class in this session",
+        });
+
+      fee = await Fee.create({
+        studentId: req.params.studentId,
+        sessionId: activeSession._id,
+        className: enrollment.className,
+        admissionFee: structure.admissionFee,
+        yearlyFee: structure.yearlyFee,
+        monthlyFee: structure.monthlyFee,
+        payments: [],
+      });
     }
 
-    res.json({ success: true, data: fee });
+    // 🔥 VERY IMPORTANT: attach class & roll from StudentSession
+    const response = {
+      ...fee.toObject(),
+      studentId: {
+        ...enrollment.studentId.toObject(),
+        className: enrollment.className,
+        rollNo: enrollment.rollNo,
+      },
+    };
+
+    res.json(response);
+
   } catch (err) {
-    res.status(500).json({ success: false, message: err.message });
+    res.status(500).json({ message: err.message });
   }
 };
 
-// 🔹 Add Payment
+
+
+/* ========================================
+   ADD PAYMENT
+======================================== */
 export const addPayment = async (req, res) => {
   try {
+
     const { studentId, feeType, amount, paymentMode } = req.body;
 
-    const fee = await Fee.findOne({ studentId });
+    const activeSession = await AcademicSession.findOne({ isActive: true });
+
+    if (!activeSession)
+      return res.status(400).json({ message: "No active session found" });
+
+    const fee = await Fee.findOne({
+      studentId,
+      sessionId: activeSession._id,
+    });
 
     if (!fee)
-      return res.status(404).json({ message: "Fee not set for this student" });
-
-    const receiptNo = "RCPT-" + Date.now();
+      return res.status(404).json({ message: "Fee record not found" });
 
     fee.payments.push({
-      receiptNo,
+      receiptNo: "RCPT-" + Date.now(),
       feeType,
       amount,
       paymentMode,
     });
 
-    await fee.save({ validateModifiedOnly: true });
+    await fee.save();
 
-
-    res.json({ success: true, data: fee });
+    res.json(fee);
 
   } catch (err) {
     res.status(500).json({ message: err.message });
@@ -57,95 +108,93 @@ export const addPayment = async (req, res) => {
 };
 
 
-// 🔹 Fetch Full Fee Details
-import Student from "../student/student.model.js";
-import FeeStructure from "../feeStructure/feeStructure.model.js";
-
-export const getFeeByStudent = async (req, res) => {
+/* ========================================
+   DELETE PAYMENT
+======================================== */
+export const deletePayment = async (req, res) => {
   try {
-    let fee = await Fee.findOne({
-      studentId: req.params.studentId,
-    }).populate("studentId");
 
-    // 🔥 If fee not found → auto create from class structure
-    if (!fee) {
+    const { studentId, receiptNo } = req.body;
 
-      const student = await Student.findById(
-        req.params.studentId
-      );
+    const activeSession = await AcademicSession.findOne({ isActive: true });
 
-      if (!student)
-        return res.status(404).json({
-          message: "Student not found"
-        });
+    const fee = await Fee.findOne({
+      studentId,
+      sessionId: activeSession._id,
+    });
 
-      const classFee =
-        await FeeStructure.findOne({
-          className: student.className
-        });
-
-      if (!classFee)
-        return res.status(404).json({
-          message: "Class fee not set"
-        });
-
-      fee = await Fee.create({
-        studentId: student._id,
-        admissionFee: classFee.admissionFee,
-        yearlyFee: classFee.yearlyFee,
-        monthlyFee: classFee.monthlyFee,
-        payments: [],
+    if (!fee)
+      return res.status(404).json({
+        message: "Fee record not found",
       });
 
-      fee = await fee.populate("studentId");
-    }
+    fee.payments = fee.payments.filter(
+      p => p.receiptNo !== receiptNo
+    );
 
-    res.json({ success: true, data: fee });
+    await fee.save();
 
-  } catch (err) {
-    res.status(500).json({
-      success: false,
-      message: err.message
-    });
-  }
-};
+    res.json(fee);
 
-
-export const getAllFees = async (req, res) => {
-  try {
-    const fees = await Fee.find().populate("studentId");
-    res.json(fees);
   } catch (err) {
     res.status(500).json({ message: err.message });
   }
 };
 
-export const getCollectionReport = async (req, res) => {
+
+/* ==========================================
+   GET FEE STATUS (SESSION BASED)
+========================================== */
+export const getFeeStatus = async (req, res) => {
   try {
-    const { start, end } = req.query;
 
-    const startDate = new Date(start);
-    const endDate = new Date(end);
+    const { className } = req.query;
 
-    const result = await Fee.aggregate([
-      { $unwind: "$payments" },
-      {
-        $match: {
-          "payments.paymentDate": {
-            $gte: startDate,
-            $lte: endDate,
-          },
-        },
-      },
-      {
-        $group: {
-          _id: null,
-          totalCollection: { $sum: "$payments.amount" },
-        },
-      },
-    ]);
+    const activeSession = await AcademicSession.findOne({ isActive: true });
 
-    res.json(result[0] || { totalCollection: 0 });
+    if (!activeSession)
+      return res.status(400).json({ message: "No active session found" });
+
+    const filter = {
+      sessionId: activeSession._id,
+    };
+
+    if (className) {
+      filter.className = className;
+    }
+
+    const enrollments = await StudentSession.find(filter)
+      .populate("studentId");
+
+    const result = [];
+
+    for (let record of enrollments) {
+
+      // 🔥 Prevent crash if student deleted
+      if (!record.studentId) continue;
+
+      let fee = await Fee.findOne({
+        studentId: record.studentId._id,
+        sessionId: activeSession._id,
+      });
+
+      if (!fee) continue;
+
+      result.push({
+        studentId: record.studentId._id,
+        name: record.studentId.name,
+        rollNo: record.rollNo,
+        className: record.className,
+
+        totalAmount: fee.totalAmount,
+        totalPaid: fee.totalPaid,
+        dueAmount: fee.dueAmount,
+
+        status: fee.dueAmount > 0 ? "Due" : "Paid",
+      });
+    }
+
+    res.json(result);
 
   } catch (err) {
     res.status(500).json({ message: err.message });
@@ -154,37 +203,106 @@ export const getCollectionReport = async (req, res) => {
 
 export const getDefaulters = async (req, res) => {
   try {
-    const fees = await Fee.find().populate("studentId");
 
-    const defaulters = fees.filter(f => f.dueAmount > 0);
+    const activeSession = await AcademicSession.findOne({ isActive: true });
 
-    res.json(defaulters);
+    if (!activeSession)
+      return res.status(400).json({ message: "No active session found" });
+
+    const enrollments = await StudentSession.find({
+      sessionId: activeSession._id
+    }).populate("studentId");
+
+    const result = [];
+
+    for (let record of enrollments) {
+
+      if (!record.studentId) continue;
+
+      const fee = await Fee.findOne({
+        studentId: record.studentId._id,
+        sessionId: activeSession._id
+      });
+
+      if (!fee) continue;
+
+      if (fee.dueAmount > 0) {
+
+        result.push({
+          studentId: record.studentId._id,
+          name: record.studentId.name,
+          rollNo: record.rollNo,
+          className: record.className,
+          totalAmount: fee.totalAmount,
+          totalPaid: fee.totalPaid,
+          dueAmount: fee.dueAmount
+        });
+
+      }
+    }
+
+    res.json(result);
 
   } catch (err) {
     res.status(500).json({ message: err.message });
   }
 };
 
-export const deletePayment = async (req, res) => {
+export const getCollectionReport = async (req, res) => {
   try {
-    const { studentId, receiptNo } = req.body;
 
-    const fee = await Fee.findOne({ studentId });
+    const { start, end } = req.query;
 
-    if (!fee)
-      return res.status(404).json({ message: "Fee not found" });
+    const activeSession = await AcademicSession.findOne({ isActive: true });
 
-    fee.payments = fee.payments.filter(
-      p => p.receiptNo !== receiptNo
-    );
+    if (!activeSession)
+      return res.status(400).json({ message: "No active session found" });
 
-    await fee.save({ validateModifiedOnly: true });
+    const fees = await Fee.find({
+      sessionId: activeSession._id,
+    }).populate("studentId");
 
-    res.json({ success: true, data: fee });
+    const startDate = start ? new Date(start) : null;
+    const endDate = end ? new Date(end) : null;
+
+    if (endDate) {
+      endDate.setHours(23, 59, 59, 999);
+    }
+
+    const result = [];
+
+    for (let fee of fees) {
+
+      if (!fee.studentId) continue;
+
+      for (let payment of fee.payments) {
+
+        const paymentDate = new Date(payment.paymentDate);
+
+        if (
+          (!startDate || paymentDate >= startDate) &&
+          (!endDate || paymentDate <= endDate)
+        ) {
+
+          result.push({
+            receiptNo: payment.receiptNo,
+            date: payment.paymentDate,
+            studentName: fee.studentId.name,
+            rollNo: fee.studentId.rollNo,
+            className: fee.className,
+            feeType: payment.feeType,
+            amount: payment.amount,
+            paymentMode: payment.paymentMode
+          });
+
+        }
+      }
+    }
+
+    res.json(result);
 
   } catch (err) {
     res.status(500).json({ message: err.message });
   }
 };
-
 

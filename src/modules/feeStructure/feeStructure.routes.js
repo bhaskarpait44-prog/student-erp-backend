@@ -1,11 +1,17 @@
 import express from "express";
-import * as controller from "./feeStructure.controller.js";
+import { protect } from "../../middlewares/auth.middleware.js";
+import {
+  createFeeStructure,
+  getAllClassFees,
+  deleteClassFee
+} from "./feeStructure.controller.js";
 
 const router = express.Router();
 
-router.post("/", controller.setClassFee);
-router.get("/", controller.getAllClassFees);
-router.delete("/:id", controller.deleteClassFee);
+router.use(protect);
 
+router.post("/", createFeeStructure);
+router.get("/", getAllClassFees);
+router.delete("/:id", deleteClassFee);
 
 export default router;

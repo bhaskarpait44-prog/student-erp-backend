@@ -13,7 +13,16 @@ import attendanceRoutes from "./modules/attendance/attendance.routes.js";
 
 
 const app = express();
-app.use(cors());
+import cors from "cors";
+
+app.use(cors({
+  origin: [
+    "http://localhost:5173",       // local dev
+    "https://student-erp-frontend-one.vercel.app/"   // your Vercel frontend URL
+  ],
+  credentials: true
+}));
+
 app.use(express.json());
 
 app.use("/api/auth", authRoutes);
